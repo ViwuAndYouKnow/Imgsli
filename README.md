@@ -2,7 +2,7 @@
 
 **A simple before/after image comparison tool for the browser. Inspired by the now retired imgsli(dot)com website.**
 
-Drop in 2 images. Drag the slider. Zoom in. Pan around. Compare & share the comparison with links that automatically expires after 7 days.
+Drop in 2 images. Drag the slider. Zoom in. Pan around. Compare & share with links that automatically expires after 7 days.
 
 ![Preview](https://raw.githubusercontent.com/ViwuAndYouKnow/Imgsli/refs/heads/main/Preview.png)
 
