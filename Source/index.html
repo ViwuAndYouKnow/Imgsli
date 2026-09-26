@@ -1,1 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Imageslider</title>
+<link rel="icon" href="data:,">
+<script>/* shared pages: hide the placeholder images before first paint */if (/[?&]id=/.test(location.search)) document.documentElement.classList.add("shared");</script>
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --panel: rgba(16, 18, 22, .82);
+    --border: #2a2f38;
+    --text: #e8eaed;
+    --dim: #8b93a1;
+    --err: #ff6b6b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
 
+  /* ---- full-screen viewer ---- */
+  .viewer {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    overflow: hidden;
+    cursor: ew-resize;
+    touch-action: none;
+    user-select: none;
+  }
+  .viewer.zoomed { cursor: grab; }
+  .viewer.panning { cursor: grabbing; }
+
+  /* the stage is what gets zoomed/panned */
+  .stage {
+    position: absolute;
+    inset: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  .stage img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+  }
+  .stage .top { clip-path: inset(0 0 0 50%); }
+  /* shared pages: no placeholder flash — images stay hidden until the
+     real pair is swapped in by the main script */
+  html.shared .stage img { visibility: hidden; }
+
+  /* slider: rendered in screen space (outside the scaled stage) so it
+     stays perfectly crisp at any zoom level */
+  .handle {
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 26px;
+    transform: translateX(-50%);
+    z-index: 2;
+    cursor: ew-resize;
+  }
+  .handle::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, .4);
+  }
+  .handle::after {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 12px; height: 12px;
+    background: rgba(255, 255, 255, .92);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .4), 0 1px 4px rgba(0,0,0,.4);
+  }
+
+  .tag {
+    position: absolute;
+    top: 12px;
+    padding: 3px 10px;
+    background: rgba(0,0,0,.5);
+    border-radius: 99px;
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--text);
+    z-index: 3;
+    pointer-events: none;
+    opacity: .8;
+  }
+  .tag.l { left: 12px; }
+  .tag.r { right: 12px; }
+
+  .zoom-badge {
+    position: absolute;
+    top: 46px;
+    right: 12px;
+    padding: 3px 10px;
+    background: rgba(0,0,0,.5);
+    border-radius: 99px;
+    font-size: 12px;
+    color: var(--text);
+    z-index: 4;
+    cursor: pointer;
+    display: none;
+  }
+  .zoom-badge.show { display: block; }
+
+  /* ---- panel toggle (top center) ---- */
+  .panel-toggle {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    background: rgba(0,0,0,.5);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 4px 14px;
+    font: 400 12px/1.6 system-ui, sans-serif;
+    cursor: pointer;
+  }
+  .panel-toggle:hover { background: rgba(40,44,52,.8); }
+  body.shared .panel-toggle { display: none; }
+
+  /* ---- overlay control panel (inside the viewer) ---- */
+  .panel {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 5;
+    background: var(--panel);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    padding: 14px 16px 12px;
+    transition: transform .25s ease;
+  }
+  .panel.hidden { transform: translateY(105%); }
+  body.shared .panel { display: none; }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 12px;
+    align-items: stretch;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .drop {
+    position: relative;
+    background: rgba(255,255,255,.04);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    min-height: 64px;
+  }
+  .drop:hover { border-color: #4a5262; }
+  .drop.over { border-color: #fff; background: rgba(255,255,255,.08); }
+  .drop input { display: none; }
+  .drop .thumb {
+    width: 42px; height: 42px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #000;
+    flex-shrink: 0;
+  }
+  .drop .ph {
+    width: 42px; height: 42px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--dim); font-size: 18px;
+    flex-shrink: 0;
+  }
+  .drop .meta { min-width: 0; }
+  .drop .name {
+    font-size: 12.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .drop .sub { font-size: 11.5px; color: var(--dim); }
+
+  button {
+    background: #fff;
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font: 600 13.5px/1.2 system-ui, sans-serif;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  button:hover { opacity: .85; }
+  button:disabled { opacity: .35; cursor: default; }
+  button.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 400;
+  }
+
+  .result {
+    display: none;
+    max-width: 900px;
+    margin: 12px auto 0;
+    gap: 8px;
+    align-items: center;
+    background: rgba(255,255,255,.05);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    animation: rise .25s ease;
+  }
+  .result.show { display: flex; flex-wrap: wrap; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .result input {
+    flex: 1;
+    min-width: 200px;
+    background: #0c0e12;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: #cdd3dc;
+    padding: 8px 12px;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 12.5px;
+  }
+  .result .result-note {
+    font-size: 11.5px;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+
+  .hint {
+    max-width: 900px;
+    margin: 10px auto 0;
+    font-size: 11.5px;
+    color: var(--dim);
+    text-align: center;
+  }
+
+  .loader {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 34px; height: 34px;
+    border: 3px solid rgba(255, 255, 255, .15);
+    border-top-color: rgba(255, 255, 255, .8);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 4;
+    display: none;
+    animation: spin .8s linear infinite;
+  }
+  .loader.show { display: block; }
+  @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+  /* fading hint for shared (clean) pages */
+  .shared-hint {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4;
+    background: rgba(0,0,0,.5);
+    border-radius: 99px;
+    padding: 5px 16px;
+    font-size: 12.5px;
+    color: var(--text);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .8s ease;
+    white-space: nowrap;
+  }
+  .shared-hint.show { opacity: .9; }
+
+  /* ---- toasts / errors ---- */
+  .toast {
+    position: absolute;
+    top: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 7;
+    max-width: min(90%, 560px);
+    border-radius: 10px;
+    padding: 10px 16px 10px 14px;
+    font-size: 13.5px;
+    text-align: left;
+    display: none;
+    align-items: center;
+    gap: 9px;
+    background: rgba(12, 14, 18, .96);
+    border: 1px solid #343b47;
+    color: var(--text);
+    box-shadow: 0 8px 28px rgba(0,0,0,.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .toast.show { display: flex; }
+  .toast::before {
+    content: "";
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #8b93a1;
+  }
+  .toast.err::before { background: var(--err); }
+  .toast.ok::before { background: #51cf66; }
+
+  /* ---- full-page drop overlay ---- */
+  .drop-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    background: rgba(10,12,15,.65);
+  }
+  .drop-hint div {
+    border: 2px dashed rgba(255,255,255,.7);
+    border-radius: 14px;
+    padding: 36px 54px;
+    font-size: 19px;
+    color: var(--text);
+    background: rgba(0,0,0,.4);
+    text-align: center;
+  }
+  body.dragging .drop-hint { display: flex; }
+
+  @media (max-width: 640px) {
+    .controls { grid-template-columns: 1fr; }
+    .shared-hint { white-space: normal; max-width: 85%; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<div class="drop-hint"><div id="dropHintText">Drop images to compare</div></div>
+
+<div class="viewer" id="viewer" tabindex="0" aria-label="Comparison viewer. Left and right arrow keys move the slider.">
+  <div class="stage" id="stage">
+    <img id="imgBefore" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='900'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231b2129'/%3E%3Cstop offset='1' stop-color='%2310141a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1600' height='900' fill='url(%23g)'/%3E%3Cg fill='none' stroke='%232b3442' stroke-width='4'%3E%3Crect x='650' y='330' width='300' height='240' rx='18'/%3E%3Ccircle cx='740' cy='410' r='26'/%3E%3Cpath d='M670 540 L790 440 L880 520 L930 470'/%3E%3C/g%3E%3C/svg%3E">
+    <img id="imgAfter" class="top" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='900'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23241f1b'/%3E%3Cstop offset='1' stop-color='%23151210'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1600' height='900' fill='url(%23g)'/%3E%3Cg fill='none' stroke='%233a3128' stroke-width='4'%3E%3Crect x='650' y='330' width='300' height='240' rx='18'/%3E%3Ccircle cx='740' cy='410' r='26'/%3E%3Cpath d='M670 540 L790 440 L880 520 L930 470'/%3E%3C/g%3E%3C/svg%3E">
+  </div>
+  <div class="handle" id="handle"></div>
+  <div class="loader" id="loader"></div>
+
+  <span class="tag l">before</span>
+  <span class="tag r">after</span>
+  <div class="zoom-badge" id="zoomBadge" title="Click to reset zoom">1&times;</div>
+
+  <button class="panel-toggle" id="panelToggle" aria-label="Show or hide controls">&#9662; controls</button>
+
+  <div class="shared-hint" id="sharedHint"></div>
+  <div class="toast" id="toast"></div>
+
+  <div class="panel" id="panel">
+    <div class="controls">
+      <label class="drop" id="dropBefore">
+        <input type="file" id="fileBefore" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp">
+        <span class="ph" id="phBefore">+</span>
+        <img class="thumb" id="thumbBefore" alt="" hidden>
+        <span class="meta">
+          <div class="name" id="nameBefore">Before image</div>
+          <div class="sub" id="subBefore">click or drop on the left side</div>
+        </span>
+      </label>
+
+      <label class="drop" id="dropAfter">
+        <input type="file" id="fileAfter" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp">
+        <span class="ph" id="phAfter">+</span>
+        <img class="thumb" id="thumbAfter" alt="" hidden>
+        <span class="meta">
+          <div class="name" id="nameAfter">After image</div>
+          <div class="sub" id="subAfter">click or drop on the right side</div>
+        </span>
+      </label>
+
+      <button id="createBtn" disabled>Create link</button>
+    </div>
+
+    <div class="result" id="result">
+      <input type="text" id="linkInput" readonly aria-label="Shareable link">
+      <button id="copyBtn">Copy</button>
+      <span class="result-note">expires in 7 days</span>
+    </div>
+
+    <p class="hint">drop images anywhere &middot; drop on one side to replace it &middot; scroll to zoom &middot; drag image to pan &middot; double-click to reset</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var viewer = $("viewer"), stage = $("stage"), handle = $("handle");
+  var imgBefore = $("imgBefore"), imgAfter = $("imgAfter");
+  var zoomBadge = $("zoomBadge"), panel = $("panel");
+  var files = { before: null, after: null };
+
+  // built-in SVG placeholders (captured before anything swaps the srcs)
+  var FB_B = imgBefore.src, FB_A = imgAfter.src;
+
+  function preload(url) {
+    return new Promise(function (resolve) {
+      var im = new Image();
+      im.onload = function () { resolve(im); };
+      im.onerror = function () { resolve(null); };
+      im.src = url;
+    });
+  }
+
+  // a side is "untouched" if it shows the built-in placeholder or nothing
+  function isPlaceholder(img) {
+    var s = img.getAttribute("src") || "";
+    return s === "" || s.indexOf("data:") === 0;
+  }
+
+  function swapIn(img, url) {
+    // fade in when coming from black (shared pages), instant over a placeholder
+    var fade = (img.getAttribute("src") || "") === "";
+    if (!fade) { img.src = url; img.style.visibility = "visible"; return; }
+    img.style.transition = "none";
+    img.style.opacity = "0";
+    img.style.visibility = "visible";
+    img.src = url;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        img.style.transition = "opacity .3s ease";
+        img.style.opacity = "1";
+      });
+    });
+  }
+
+  // preload BOTH images first, then swap them in at the same frame so
+  // they appear simultaneously instead of one-by-one.
+  // all-or-nothing: if either image fails, BOTH sides show the
+  // placeholder (never a mismatched pair)
+  function showPair(urlB, urlA) {
+    $("loader").classList.add("show");
+    Promise.all([preload(urlB), preload(urlA)]).then(function (res) {
+      $("loader").classList.remove("show");
+      var both = !!(res[0] && res[1]);
+      if (isPlaceholder(imgBefore)) swapIn(imgBefore, both ? res[0].src : FB_B);
+      if (isPlaceholder(imgAfter)) swapIn(imgAfter, both ? res[1].src : FB_A);
+    });
+  }
+
+  /* ================= slider ================= */
+  var pos = 50; // percentage of the image
+
+  function updateHandle() {
+    // map the image-space position to screen space (accounts for zoom + pan)
+    var r = viewer.getBoundingClientRect();
+    handle.style.left = (tx + s * (pos / 100) * r.width) + "px";
+  }
+
+  function setPos(pct) {
+    pos = Math.max(0, Math.min(100, pct));
+    imgAfter.style.clipPath = "inset(0 0 0 " + pos + "%)";
+    updateHandle();
+  }
+
+  /* ================= zoom & pan ================= */
+  var MIN_Z = 1, MAX_Z = 8;
+  var s = 1, tx = 0, ty = 0;
+
+  function clampPan() {
+    if (s <= 1) { tx = 0; ty = 0; return; }
+    var r = viewer.getBoundingClientRect();
+    tx = Math.min(0, Math.max(r.width * (1 - s), tx));
+    ty = Math.min(0, Math.max(r.height * (1 - s), ty));
+  }
+
+  function applyTransform() {
+    stage.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + s + ")";
+    updateHandle();
+    viewer.classList.toggle("zoomed", s > 1);
+    if (s > 1.001) {
+      zoomBadge.textContent = (Math.round(s * 100) / 100) + "\u00d7";
+      zoomBadge.classList.add("show");
+    } else {
+      zoomBadge.classList.remove("show");
+    }
+  }
+
+  function resetZoom() { s = 1; tx = 0; ty = 0; applyTransform(); }
+
+  function zoomAt(clientX, clientY, factor) {
+    var r = viewer.getBoundingClientRect();
+    var px = clientX - r.left, py = clientY - r.top;
+    var ns = Math.min(MAX_Z, Math.max(MIN_Z, s * factor));
+    // keep the point under the cursor fixed while zooming
+    tx = px - (px - tx) * (ns / s);
+    ty = py - (py - ty) * (ns / s);
+    s = ns;
+    clampPan();
+    applyTransform();
+  }
+
+  viewer.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015));
+  }, { passive: false });
+
+  viewer.addEventListener("dblclick", function (e) {
+    if (e.target.closest(".panel, .zoom-badge, .panel-toggle")) return;
+    resetZoom();
+  });
+  zoomBadge.addEventListener("click", resetZoom);
+
+  // screen x -> percentage of the image (accounts for zoom + pan)
+  function eventToPct(clientX) {
+    var r = viewer.getBoundingClientRect();
+    var worldX = (clientX - r.left - tx) / s;
+    return (worldX / r.width) * 100;
+  }
+
+  /* ---- pointer: slider vs pan ---- */
+  var mode = null, lastX = 0, lastY = 0;
+
+  viewer.addEventListener("pointerdown", function (e) {
+    // let UI elements inside the viewer handle their own clicks
+    if (e.target.closest(".panel, .zoom-badge, .panel-toggle")) return;
+
+    if (e.target.closest(".handle")) mode = "slider";
+    else if (s > 1) mode = "pan";
+    else mode = "slider";
+
+    if (mode === "pan") viewer.classList.add("panning");
+    lastX = e.clientX; lastY = e.clientY;
+    viewer.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  viewer.addEventListener("pointermove", function (e) {
+    if (!mode) return;
+    if (mode === "slider") {
+      setPos(eventToPct(e.clientX));
+    } else {
+      tx += e.clientX - lastX;
+      ty += e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      clampPan();
+      applyTransform();
+    }
+  });
+
+  function endPointer() {
+    mode = null;
+    viewer.classList.remove("panning");
+  }
+  viewer.addEventListener("pointerup", endPointer);
+  viewer.addEventListener("pointercancel", endPointer);
+
+  viewer.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowLeft") { setPos(pos - 2); e.preventDefault(); }
+    if (e.key === "ArrowRight") { setPos(pos + 2); e.preventDefault(); }
+  });
+
+  window.addEventListener("resize", function () {
+    clampPan();
+    applyTransform();
+  });
+
+  /* ================= toasts ================= */
+  var toastTimer = null;
+  function toast(msg, kind) {
+    var el = $("toast");
+    el.textContent = msg;
+    el.className = "toast show " + (kind || "err");
+    clearTimeout(toastTimer);
+    if (kind !== "sticky") toastTimer = setTimeout(function () { el.className = "toast"; }, 4000);
+  }
+  function showError(msg) { toast(msg, "err"); }
+  function hideError() { $("toast").className = "toast"; }
+
+  /* ================= file selection ================= */
+  var IMG_RE = /^image\/(png|jpeg|gif|webp|avif|bmp)$/;
+
+  function selectFile(side, file) {
+    if (!IMG_RE.test(file.type)) {
+      showError("Only PNG, JPG, GIF, WebP, AVIF or BMP images are allowed.");
+      return;
+    }
+    files[side] = file;
+
+    var img = side === "before" ? imgBefore : imgAfter;
+    var url = URL.createObjectURL(file);
+    if (img.src && img.src.indexOf("blob:") === 0) URL.revokeObjectURL(img.src);
+    img.src = url;
+
+    var capSide = cap(side);
+    $("thumb" + capSide).src = url;
+    $("thumb" + capSide).hidden = false;
+    $("ph" + capSide).hidden = true;
+    $("name" + capSide).textContent = file.name;
+    subText(side);
+
+    hideError();
+    $("createBtn").disabled = !(files.before && files.after);
+  }
+
+  function subText(side) {
+    $(side === "before" ? "subBefore" : "subAfter").textContent =
+      files[side] ? "drop a new image here to replace" : (side === "before" ? "click or drop on the left side" : "click or drop on the right side");
+  }
+
+  function cap(x) { return x[0].toUpperCase() + x.slice(1); }
+
+  // which half of the screen is the pointer over?
+  function sideFromPoint(x) {
+    var r = viewer.getBoundingClientRect();
+    return (x < r.left + r.width / 2) ? "before" : "after";
+  }
+
+  function handleFiles(fileList, side) {
+    var imgs = Array.prototype.filter.call(fileList, function (f) { return IMG_RE.test(f.type); });
+    if (!imgs.length) {
+      showError("Only PNG, JPG, GIF, WebP, AVIF or BMP images are allowed.");
+      return;
+    }
+
+    if (files.before && files.after) {
+      // both slots full: two images replace both, one image replaces its side
+      if (imgs.length >= 2) {
+        selectFile("before", imgs[0]);
+        selectFile("after", imgs[1]);
+      } else {
+        selectFile(side || "before", imgs[0]);
+      }
+      return;
+    }
+
+    // single image: honor the side it was dropped on (replace or first load)
+    if (imgs.length === 1 && side && (files[side] || !files.before && !files.after)) {
+      selectFile(side, imgs[0]);
+      return;
+    }
+
+    // fill empty slots in order: first file -> before, second -> after
+    var i = 0;
+    if (!files.before && imgs[i]) { selectFile("before", imgs[i]); i++; }
+    if (!files.after && imgs[i]) { selectFile("after", imgs[i]); i++; }
+  }
+
+  $("fileBefore").addEventListener("change", function () {
+    if (this.files[0]) selectFile("before", this.files[0]);
+  });
+  $("fileAfter").addEventListener("change", function () {
+    if (this.files[0]) selectFile("after", this.files[0]);
+  });
+
+  /* ---- global drag & drop: works anywhere, side-aware ---- */
+  var dragDepth = 0;
+
+  function hasFiles(e) {
+    return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, "Files") !== -1;
+  }
+
+  function zoneForSide(side) { return $(side === "before" ? "dropBefore" : "dropAfter"); }
+
+  function clearZoneHighlights() {
+    $("dropBefore").classList.remove("over");
+    $("dropAfter").classList.remove("over");
+  }
+
+  window.addEventListener("dragenter", function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    document.body.classList.add("dragging");
+    var both = !!(files.before && files.after);
+    $("dropHintText").textContent = both ? "Drop on a side to replace it" : "Drop images to compare";
+  });
+
+  window.addEventListener("dragover", function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); // required to allow dropping
+    clearZoneHighlights();
+    zoneForSide(sideFromPoint(e.clientX)).classList.add("over");
+  });
+
+  window.addEventListener("dragleave", function (e) {
+    if (!hasFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) {
+      document.body.classList.remove("dragging");
+      clearZoneHighlights();
+    }
+  });
+
+  window.addEventListener("drop", function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove("dragging");
+    clearZoneHighlights();
+
+    // dropping directly on a zone targets that side explicitly
+    var zone = e.target.closest ? e.target.closest(".drop") : null;
+    var side = zone ? (zone.id === "dropBefore" ? "before" : "after") : sideFromPoint(e.clientX);
+    handleFiles(e.dataTransfer.files, side);
+  });
+
+  /* ================= panel toggle ================= */
+  $("panelToggle").addEventListener("click", function () {
+    var hidden = panel.classList.toggle("hidden");
+    this.innerHTML = hidden ? "&#9652; controls" : "&#9662; controls";
+  });
+
+  /* ================= upload / share link ================= */
+  $("createBtn").addEventListener("click", function () {
+    if (!files.before || !files.after) return;
+
+    var btn = $("createBtn");
+    btn.disabled = true;
+    btn.textContent = "Uploading\u2026";
+    hideError();
+
+    var fd = new FormData();
+    fd.append("before", files.before);
+    fd.append("after", files.after);
+
+    fetch("upload.php", { method: "POST", body: fd })
+      .then(function (r) {
+        return r.text().then(function (text) {
+          console.log("[compare] upload.php responded " + r.status + ":", text);
+          var d = null;
+          try { d = JSON.parse(text); } catch (e) { /* not JSON */ }
+          if (!d) throw new Error("Server error " + r.status + (text ? ": " + text.slice(0, 200) : " (empty response)"));
+          return { ok: r.ok, d: d };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok || !res.d.ok) throw new Error(res.d.error || "Upload failed");
+        $("linkInput").value = res.d.link;
+        $("result").classList.add("show");
+        copyLink(function (ok) {
+          toast(ok ? "Link copied to clipboard" : "Link created \u2014 press Copy", ok ? "ok" : "err");
+        });
+      })
+      .catch(function (e) { showError(e.message); })
+      .finally(function () {
+        btn.disabled = !(files.before && files.after);
+        btn.textContent = "Create link";
+      });
+  });
+
+  function copyLink(cb) {
+    var input = $("linkInput");
+    input.select();
+    input.setSelectionRange(0, input.value.length);
+    var legacy = function () {
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      cb(ok);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(input.value).then(function () { cb(true); }, legacy);
+    } else {
+      legacy();
+    }
+  }
+
+  $("copyBtn").addEventListener("click", function () {
+    copyLink(function (ok) {
+      toast(ok ? "Link copied" : "Copy failed \u2014 select the link manually", ok ? "ok" : "err");
+    });
+  });
+
+  /* ================= shared view (?id=...) ================= */
+  var params = new URLSearchParams(location.search);
+  var shareId = params.get("id");
+
+  // first visit: show the bundled sample images (preloaded, swapped in
+  // together). Any side that fails to load falls back to the built-in
+  // placeholder.
+  //
+  // NOTE: to disable the sample images entirely (always show the SVG
+  // placeholder on first visit), remove the loadSampleImages() call below.
+  function loadSampleImages() {
+    showPair("sample/before.png", "sample/after.png");
+  }
+
+  if (shareId) {
+    document.body.classList.add("shared");
+
+    // image URLs are deterministic from the id, so start loading them
+    // immediately instead of waiting for the metadata round-trip;
+    // the placeholder icon is skipped on shared pages (clean black + spinner)
+    imgBefore.removeAttribute("src");
+    imgAfter.removeAttribute("src");
+    showPair(
+      "upload.php?id=" + encodeURIComponent(shareId) + "&img=before",
+      "upload.php?id=" + encodeURIComponent(shareId) + "&img=after"
+    );
+
+    // metadata runs in parallel: expiry info + error reporting only
+    fetch("upload.php?id=" + encodeURIComponent(shareId))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) throw new Error(d.error || "Not found");
+
+        var msLeft = d.expiresAt * 1000 - Date.now();
+        var when;
+        if (msLeft <= 0) {
+          when = "expired";
+        } else {
+          var mins = Math.ceil(msLeft / 60000);
+          var hrs = Math.floor(msLeft / 3600000);
+          var days = Math.ceil(msLeft / 86400000);
+          if (mins < 60) when = mins + " minute" + (mins === 1 ? "" : "s");
+          else if (hrs < 48) when = hrs + " hour" + (hrs === 1 ? "" : "s");
+          else when = days + " day" + (days === 1 ? "" : "s");
+        }
+        var hint = $("sharedHint");
+        hint.textContent = "expires in " + when +
+          "  \u00b7  scroll to zoom, drag to pan, double-click to reset";
+        hint.classList.add("show");
+        setTimeout(function () { hint.classList.remove("show"); }, 6000);
+      })
+      .catch(function (e) { showError(e.message); });
+  } else {
+    loadSampleImages();
+  }
+})();
+</script>
+</body>
+</html>
