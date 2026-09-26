@@ -146,6 +146,6 @@ A wide screenshot showing the dark interface with the slider positioned around t
 
 Free for personal, hobby, research, education, and other non-commercial use. Credit is required.
 
-Commercial / for-profit use requires a separate license from Viwu.
+Commercial / for-profit use requires a separate license.
 
 See [`LICENSE`](LICENSE) for the complete license terms.
