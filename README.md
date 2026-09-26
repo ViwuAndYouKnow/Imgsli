@@ -17,7 +17,7 @@ Drop in 2 images. Drag the slider. Zoom in. Pan around. Compare & share with lin
 * ⏳ **Automatic expiry** — shared images are removed after 7 days (can be adjusted to your preference)
 * 🖼️ **Multiple formats** — PNG, JPG, GIF, WebP, AVIF and BMP
 * 📦 **10 MB limit** — maximum size per image (can be adjusted to your preference)
-* ⚡ **No mismatched frames** — shared comparisons load both images before displaying them
+* ⚡ **No mismatched frames** — smart image loading to prevent bugs and instabillity.
 
 ---
 
