@@ -28,7 +28,6 @@ Imageslider requires **PHP 7.x or newer**, the `fileinfo` extension, and write a
 ```text
 index.html
 upload.php
-LICENSE
 sample/
 ├── before.png
 └── after.png
