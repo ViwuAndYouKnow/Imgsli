@@ -13,8 +13,7 @@ Drop in 2 images. Drag the slider. Zoom in. Pan around. Compare & share with lin
 * 🖼️ **Before / after slider** — smooth `clip-path` comparison
 * 📂 **Drag & drop** — drop images anywhere or replace either side individually
 * 🔍 **Zoom & pan** — scroll to zoom up to 8× and drag to move around
-* ↔️ **Keyboard controls** — use the arrow keys to nudge the slider
-* 🔗 **Shareable comparisons** — upload two images and get a unique link
+* 🔗 **Shareable comparisons** — upload two images and get a unique link to share with others (cryptographically 128-bit)
 * ⏳ **Automatic expiry** — shared images are removed after 7 days (can be adjusted to your preference)
 * 🖼️ **Multiple formats** — PNG, JPG, GIF, WebP, AVIF and BMP
 * 📦 **10 MB limit** — maximum size per image (can be adjusted to your preference)
