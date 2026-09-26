@@ -1,8 +1,8 @@
 # Imageslider
 
-**A simple before/after image comparison tool for the browser.**
+**A simple before/after image comparison tool for the browser. Inspired by the now retired imgsli(dot)com website.**
 
-Drag the slider. Zoom in. Pan around. Drop in two images. Share the comparison with a link that automatically expires after 7 days.
+Drag the slider. Zoom in. Pan around. Drop in 2 images. Share the comparison with links that automatically expires after 7 days.
 
 ![Preview](https://raw.githubusercontent.com/ViwuAndYouKnow/Imgsli/refs/heads/main/Preview.png)
 
@@ -15,9 +15,9 @@ Drag the slider. Zoom in. Pan around. Drop in two images. Share the comparison w
 * 🔍 **Zoom & pan** — scroll to zoom up to 8× and drag to move around
 * ↔️ **Keyboard controls** — use the arrow keys to nudge the slider
 * 🔗 **Shareable comparisons** — upload two images and get a unique link
-* ⏳ **Automatic expiry** — shared images are removed after 7 days
+* ⏳ **Automatic expiry** — shared images are removed after 7 days (can be adjusted to your preference)
 * 🖼️ **Multiple formats** — PNG, JPG, GIF, WebP, AVIF and BMP
-* 📦 **10 MB limit** — maximum size per image
+* 📦 **10 MB limit** — maximum size per image (can be adjusted to your preference)
 * ⚡ **No mismatched frames** — shared comparisons load both images before displaying them
 
 ---
